@@ -36,6 +36,8 @@ select option{background:var(--deep)}
 .logo span{color:var(--accent)}
 .date-str{font-size:10px;color:var(--mid);letter-spacing:1.5px;font-family:'Space Mono',monospace;margin-top:2px}
 #timer-display{font-size:26px;font-weight:700;font-family:'Space Mono',monospace;color:var(--lo);text-align:right}
+#session-timer{font-size:11px;color:var(--lo);font-family:'Space Mono',monospace;margin-top:2px;letter-spacing:1px;text-align:left}
+#session-timer.running{color:var(--accent)}
 #timer-display.active{color:var(--accent)}
 #timer-display.alert{color:var(--orange);animation:pulse .5s infinite}
 #timer-btns{display:flex;gap:5px;justify-content:flex-end;margin-top:3px}
@@ -170,6 +172,27 @@ select option{background:var(--deep)}
 .two-col>div{flex:1}
 #add-submit{width:100%;padding:13px;background:var(--accent);border:none;border-radius:9px;color:var(--accent-text);font-size:13px;font-weight:700;letter-spacing:2px}
 
+
+/* Confirm dialog */
+#confirm-overlay{display:none;position:fixed;inset:0;background:#000000cc;z-index:200;align-items:center;justify-content:center;padding:20px}
+#confirm-overlay.open{display:flex}
+#confirm-box{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:24px 20px;width:100%;max-width:340px;text-align:center}
+#confirm-box h3{font-size:15px;color:var(--hi);margin-bottom:8px}
+#confirm-box p{font-size:12px;color:var(--mid);margin-bottom:20px;line-height:1.5}
+#confirm-btns{display:flex;gap:10px}
+#confirm-cancel{flex:1;padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;color:var(--mid);font-size:13px;font-weight:700}
+#confirm-ok{flex:1;padding:12px;background:var(--danger);border:none;border-radius:9px;color:#fff;font-size:13px;font-weight:700}
+
+/* Edit session modal */
+#edit-overlay{display:none;position:fixed;inset:0;background:#000000bb;z-index:50;align-items:flex-end}
+#edit-overlay.open{display:flex}
+#edit-panel{background:var(--surface);border-top:2px solid var(--accent);width:100%;max-width:480px;margin:0 auto;padding:20px 16px 32px;border-radius:16px 16px 0 0;animation:fadeIn .15s ease;max-height:90vh;overflow-y:auto}
+.edit-ex-row{background:var(--deep);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px}
+.edit-ex-name{font-size:13px;font-weight:600;color:var(--hi);margin-bottom:8px}
+.edit-set-row{display:grid;grid-template-columns:22px 1fr 1fr;gap:6px;margin-bottom:5px;align-items:center}
+.edit-set-label{font-size:9px;font-family:'Space Mono',monospace;color:var(--lo);text-align:center}
+.edit-input{padding:7px 8px;font-size:12px;border-radius:6px;width:100%}
+
 /* scrollbar */
 ::-webkit-scrollbar{width:3px}
 ::-webkit-scrollbar-thumb{background:var(--border)}
@@ -184,6 +207,7 @@ select option{background:var(--deep)}
       <div>
         <div class="logo">IRON<span>LOG</span></div>
         <div class="date-str" id="date-str"></div>
+        <div id="session-timer">SIN SESIÓN ACTIVA</div>
       </div>
       <div>
         <div id="timer-display">00:90</div>
@@ -201,6 +225,7 @@ select option{background:var(--deep)}
   <div id="import-bar">
     <button id="import-btn" onclick="document.getElementById('file-input').click()">📂 Importar rutina (.xlsx)</button>
     <input type="file" id="file-input" accept=".xlsx,.xls" style="display:none" onchange="importXlsx(event)"/>
+    <button id="export-btn" onclick="exportSessions()" style="background:var(--surface2);border:1px solid var(--border);color:var(--mid);border-radius:7px;padding:6px 14px;font-size:11px;letter-spacing:1px">📥 Exportar sesiones</button>
     <span id="import-msg">Cargá tu plantilla Excel</span>
     <span id="import-err"></span>
   </div>
@@ -261,6 +286,31 @@ select option{background:var(--deep)}
       <div id="no-muscle-data" style="text-align:center;padding:20px 0;color:var(--lo);font-size:11px;letter-spacing:1px">GUARDÁ SESIONES PARA VER TU MAPA</div>
     </div>
 
+  </div>
+</div>
+
+
+<!-- CONFIRM DIALOG -->
+<div id="confirm-overlay">
+  <div id="confirm-box">
+    <h3 id="confirm-title">¿Estás seguro?</h3>
+    <p id="confirm-msg">Esta acción no se puede deshacer.</p>
+    <div id="confirm-btns">
+      <button id="confirm-cancel" onclick="closeConfirm()">Cancelar</button>
+      <button id="confirm-ok" onclick="confirmAction()">Eliminar</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT SESSION MODAL -->
+<div id="edit-overlay" onclick="closeEditSession()">
+  <div id="edit-panel" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div class="modal-title" style="margin:0">✏️ EDITAR SESIÓN</div>
+      <button onclick="closeEditSession()" style="background:none;border:none;color:var(--mid);font-size:18px">✕</button>
+    </div>
+    <div id="edit-session-content"></div>
+    <button onclick="saveEditSession()" style="width:100%;padding:13px;background:var(--accent);border:none;border-radius:9px;color:var(--accent-text);font-size:13px;font-weight:700;letter-spacing:2px;margin-top:8px">GUARDAR CAMBIOS</button>
   </div>
 </div>
 
@@ -368,7 +418,7 @@ let days = JSON.parse(JSON.stringify(DEFAULT_DAYS));
 let sessions = [];
 let activeDay = 0;
 let expandedEx = null;
-let timerVal = 90, timerRunning = false, timerInterval = null;
+// timer state now uses timerEnd timestamp
 let pickerState = null; // {exId, setIdx, type}
 let addMussel = "chest";
 
@@ -382,30 +432,7 @@ function persist() {
   try { localStorage.setItem("ironlog_v1", JSON.stringify({days, sessions})); } catch(e){}
 }
 
-// ── TIMER ────────────────────────────────────────────────────────
-function startTimer(s) {
-  clearInterval(timerInterval);
-  timerVal = s; timerRunning = true;
-  document.getElementById("timer-stop").style.display = "";
-  renderTimer();
-  timerInterval = setInterval(()=>{
-    timerVal--;
-    if (timerVal <= 0) { timerVal = 0; stopTimer(); }
-    renderTimer();
-  }, 1000);
-}
-function stopTimer() {
-  clearInterval(timerInterval); timerRunning = false;
-  document.getElementById("timer-stop").style.display = "none";
-  renderTimer();
-}
-function renderTimer() {
-  const el = document.getElementById("timer-display");
-  const m = String(Math.floor(timerVal/60)).padStart(2,"0");
-  const s = String(timerVal%60).padStart(2,"0");
-  el.textContent = m+":"+s;
-  el.className = timerRunning ? (timerVal<=10?"alert":"active") : "";
-}
+// Timer replaced below
 
 // ── TABS ────────────────────────────────────────────────────────
 function showTab(name) {
@@ -432,7 +459,9 @@ function renderDaySelector() {
 }
 
 function selectDay(i) {
-  activeDay = i; expandedEx = null; renderToday();
+  activeDay = i; expandedEx = null;
+  preloadLastWeights();
+  renderToday();
 }
 
 function renderExercises() {
@@ -501,25 +530,34 @@ function toggleSetDone(exId, si) {
   const ex = days[activeDay].exercises.find(e=>e.id===exId);
   ex.weights[si].done = !ex.weights[si].done;
   ex.done = ex.weights.every(w=>w.done);
+  // Start session timer on first done set
+  if (ex.weights[si].done) startSessionTimer();
   persist(); renderExercises();
 }
 
 function deleteExercise(id) {
-  days[activeDay].exercises = days[activeDay].exercises.filter(e=>e.id!==id);
-  persist(); renderExercises();
+  const ex = days[activeDay].exercises.find(e=>e.id===id);
+  const name = ex ? ex.name : "este ejercicio";
+  showConfirm("¿Borrar ejercicio?", `¿Querés eliminar "${name}" de la rutina?`, "Borrar", () => {
+    days[activeDay].exercises = days[activeDay].exercises.filter(e=>e.id!==id);
+    persist(); renderExercises();
+  });
 }
 
 function saveSession() {
   const done = days[activeDay].exercises.filter(e=>e.done);
   if (!done.length) return;
+  const duration = getSessionElapsed();
   sessions.unshift({
     id: Date.now(),
     date: new Date().toLocaleDateString("es-ES",{weekday:"short",day:"numeric",month:"short"}),
     dayLabel: days[activeDay].label,
     dayFocus: days[activeDay].focus,
     exercises: JSON.parse(JSON.stringify(done)),
-    muscles: [...new Set(done.map(e=>e.muscle))]
+    muscles: [...new Set(done.map(e=>e.muscle))],
+    duration: duration
   });
+  resetSessionTimer();
   // Reset weights
   days[activeDay].exercises.forEach(e=>{ e.done=false; e.weights=mkWeights(e.sets); });
   expandedEx = null;
@@ -624,8 +662,11 @@ function renderHistory() {
     return `<div class="session-card">
       <div class="session-header">
         <div><div class="session-date">${s.date.toUpperCase()}</div>
-          <div class="session-day">${s.dayLabel} · ${s.dayFocus}</div></div>
-        <div class="session-count">${s.exercises.length} ej.</div>
+          <div class="session-day">${s.dayLabel} · ${s.dayFocus}${s.duration ? " · ⏱ " + formatElapsed(s.duration) : ""}</div></div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button onclick="openEditSession(${s.id})" style="background:var(--surface2);border:1px solid var(--border);color:var(--mid);border-radius:6px;padding:3px 10px;font-size:11px">✏️ Editar</button>
+          <div class="session-count">${s.exercises.length} ej.</div>
+        </div>
       </div>
       <div class="muscle-tags">${tags}</div>
       <div class="session-exs">${exRows}</div>
@@ -735,6 +776,252 @@ async function importXlsx(event) {
   event.target.value="";
 }
 
+
+// ── CONFIRM DIALOG ────────────────────────────────────────────────
+let confirmCb = null;
+function showConfirm(title, msg, okLabel, cb) {
+  document.getElementById("confirm-title").textContent = title;
+  document.getElementById("confirm-msg").textContent = msg;
+  document.getElementById("confirm-ok").textContent = okLabel || "Eliminar";
+  confirmCb = cb;
+  document.getElementById("confirm-overlay").classList.add("open");
+}
+function closeConfirm() {
+  document.getElementById("confirm-overlay").classList.remove("open");
+  confirmCb = null;
+}
+function confirmAction() {
+  closeConfirm();
+  if (confirmCb) confirmCb();
+}
+
+// ── TIMER (background-safe) ────────────────────────────────────────
+// Instead of counting down, store the end timestamp
+let timerEnd = null;
+let timerRAF = null;
+
+function startTimer(s) {
+  timerEnd = Date.now() + s * 1000;
+  document.getElementById("timer-stop").style.display = "";
+  tickTimer();
+}
+function stopTimer() {
+  timerEnd = null;
+  if (timerRAF) cancelAnimationFrame(timerRAF);
+  timerRAF = null;
+  document.getElementById("timer-stop").style.display = "none";
+  renderTimerDisplay(90);
+}
+function tickTimer() {
+  if (!timerEnd) return;
+  const remaining = Math.max(0, Math.round((timerEnd - Date.now()) / 1000));
+  renderTimerDisplay(remaining);
+  if (remaining <= 0) {
+    stopTimer();
+    // Vibrate if supported
+    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+    return;
+  }
+  timerRAF = requestAnimationFrame(tickTimer);
+}
+function renderTimerDisplay(val) {
+  const el = document.getElementById("timer-display");
+  const m = String(Math.floor(val/60)).padStart(2,"0");
+  const s = String(val%60).padStart(2,"0");
+  el.textContent = m+":"+s;
+  el.className = timerEnd ? (val<=10?"alert":"active") : "";
+}
+// Resume timer if app was in background
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    if (timerEnd) tickTimer();
+    if (sessionStart) tickSessionTimer();
+  }
+});
+
+// ── LAST WEIGHTS: preload from history ────────────────────────────
+function getLastWeightsForExercise(exName) {
+  for (const s of sessions) {
+    const ex = s.exercises.find(e => e.name === exName);
+    if (ex && ex.weights && ex.weights.some(w => w.kg || w.reps)) {
+      return ex.weights;
+    }
+  }
+  return null;
+}
+function preloadLastWeights() {
+  const exs = days[activeDay].exercises;
+  let changed = false;
+  exs.forEach(ex => {
+    // Only preload if all weights are empty
+    const allEmpty = ex.weights.every(w => !w.kg && !w.reps);
+    if (!allEmpty) return;
+    const last = getLastWeightsForExercise(ex.name);
+    if (!last) return;
+    // Copy weights, reset done state
+    ex.weights = ex.weights.map((w, i) => ({
+      kg: last[i] ? last[i].kg : "",
+      reps: last[i] ? last[i].reps : "",
+      done: false
+    }));
+    changed = true;
+  });
+  if (changed) persist();
+}
+
+// ── EDIT SESSION ──────────────────────────────────────────────────
+let editingSessionId = null;
+
+function openEditSession(sessionId) {
+  editingSessionId = sessionId;
+  const s = sessions.find(s => s.id === sessionId);
+  if (!s) return;
+
+  document.getElementById("edit-session-content").innerHTML = s.exercises.map((ex, ei) => {
+    const setRows = ex.weights.map((w, si) => `
+      <div class="edit-set-row">
+        <div class="edit-set-label">S${si+1}</div>
+        <input class="edit-input" type="number" placeholder="kg"
+          value="${w.kg}" id="edit-kg-${ei}-${si}" />
+        <input class="edit-input" type="text" placeholder="reps"
+          value="${w.reps}" id="edit-reps-${ei}-${si}" />
+      </div>`).join("");
+    return `<div class="edit-ex-row">
+      <div class="edit-ex-name">✓ ${ex.name}</div>
+      <div style="display:grid;grid-template-columns:22px 1fr 1fr;gap:6px;margin-bottom:5px">
+        <div></div>
+        <div style="font-size:9px;color:var(--lo);text-align:center;letter-spacing:1px">KG</div>
+        <div style="font-size:9px;color:var(--lo);text-align:center;letter-spacing:1px">REPS</div>
+      </div>
+      ${setRows}
+    </div>`;
+  }).join("");
+
+  document.getElementById("edit-overlay").classList.add("open");
+}
+
+function closeEditSession() {
+  document.getElementById("edit-overlay").classList.remove("open");
+  editingSessionId = null;
+}
+
+function saveEditSession() {
+  const s = sessions.find(s => s.id === editingSessionId);
+  if (!s) return;
+  s.exercises.forEach((ex, ei) => {
+    ex.weights.forEach((w, si) => {
+      const kg = document.getElementById(`edit-kg-${ei}-${si}`);
+      const reps = document.getElementById(`edit-reps-${ei}-${si}`);
+      if (kg) w.kg = kg.value.trim();
+      if (reps) w.reps = reps.value.trim();
+      w.done = !!(w.kg || w.reps);
+    });
+    // Update max
+    s.muscles = [...new Set(s.exercises.map(e => e.muscle))];
+  });
+  persist();
+  closeEditSession();
+  renderHistory();
+}
+
+
+// ── SESSION TIMER ─────────────────────────────────────────────────
+let sessionStart = null;
+let sessionTimerRAF = null;
+
+function startSessionTimer() {
+  if (sessionStart) return; // already running
+  sessionStart = Date.now();
+  tickSessionTimer();
+}
+
+function stopSessionTimer() {
+  if (sessionTimerRAF) cancelAnimationFrame(sessionTimerRAF);
+  sessionTimerRAF = null;
+}
+
+function resetSessionTimer() {
+  stopSessionTimer();
+  sessionStart = null;
+  document.getElementById("session-timer").textContent = "SIN SESIÓN ACTIVA";
+  document.getElementById("session-timer").className = "";
+}
+
+function getSessionElapsed() {
+  if (!sessionStart) return 0;
+  return Math.floor((Date.now() - sessionStart) / 1000);
+}
+
+function tickSessionTimer() {
+  const el = document.getElementById("session-timer");
+  const elapsed = getSessionElapsed();
+  const m = String(Math.floor(elapsed / 60)).padStart(2, "0");
+  const s = String(elapsed % 60).padStart(2, "0");
+  el.textContent = "⏱ SESIÓN: " + m + ":" + s;
+  el.className = "running";
+  sessionTimerRAF = requestAnimationFrame(tickSessionTimer);
+}
+
+function formatElapsed(secs) {
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return m + "m " + s + "s";
+}
+
+// ── EXPORT SESSIONS TO EXCEL ──────────────────────────────────────
+async function exportSessions() {
+  if (!sessions.length) {
+    alert("No hay sesiones guardadas para exportar.");
+    return;
+  }
+  document.getElementById("export-btn").textContent = "⏳ Exportando...";
+  try {
+    if (!window.XLSX) {
+      await new Promise((res, rej) => {
+        const s = document.createElement("script");
+        s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+        s.onload = res; s.onerror = rej;
+        document.head.appendChild(s);
+      });
+    }
+    const wb = XLSX.utils.book_new();
+
+    // Sheet 1: Summary
+    const summaryRows = [["FECHA", "DÍA", "FOCO", "EJERCICIOS", "MÚSCULOS", "DURACIÓN"]];
+    sessions.forEach(s => {
+      summaryRows.push([
+        s.date, s.dayLabel, s.dayFocus,
+        s.exercises.length,
+        s.muscles.map(m => (MUSCLE_GROUPS.find(g => g.id === m)||{label:m}).label).join(", "),
+        s.duration ? formatElapsed(s.duration) : "—"
+      ]);
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryRows), "RESUMEN");
+
+    // Sheet 2: Detail
+    const detailRows = [["FECHA", "DÍA", "EJERCICIO", "MÚSCULO", "SERIE", "KG", "REPS"]];
+    sessions.forEach(s => {
+      s.exercises.forEach(ex => {
+        (ex.weights || []).forEach((w, i) => {
+          detailRows.push([
+            s.date, s.dayLabel, ex.name,
+            (MUSCLE_GROUPS.find(g => g.id === ex.muscle)||{label:ex.muscle}).label,
+            "S" + (i + 1), w.kg || "", w.reps || ""
+          ]);
+        });
+      });
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(detailRows), "DETALLE");
+
+    // Download
+    const date = new Date().toISOString().slice(0,10);
+    XLSX.writeFile(wb, "ironlog_sesiones_" + date + ".xlsx");
+  } catch(e) {
+    alert("Error al exportar: " + e.message);
+  }
+  document.getElementById("export-btn").textContent = "📥 Exportar sesiones";
+}
+
 // ── INIT ─────────────────────────────────────────────────────────
 document.getElementById("date-str").textContent =
   new Date().toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"short"}).toUpperCase();
@@ -744,8 +1031,9 @@ renderMuscleChips();
 renderExSelect();
 
 // Initial render
+preloadLastWeights();
 renderToday();
-renderTimer();
+renderTimerDisplay(90);
 
 // Service worker
 if ("serviceWorker" in navigator) {
