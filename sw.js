@@ -1,23 +1,18 @@
 const CACHE = "ironlog-v2";
 const ASSETS = [
-  "/",
-  "/index.html",
-  "/manifest.json",
-  "/icons/icon-192.png",
-  "/icons/icon-512.png",
-  "https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js",
-  "https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js",
-  "https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js",
+  "/AppGym-/",
+  "/AppGym-/index.html",
+  "/AppGym-/manifest.json",
+  "/AppGym-/icons/icon-192.png",
+  "/AppGym-/icons/icon-512.png",
 ];
 
-// Install: cache all assets
 self.addEventListener("install", e => {
   e.waitUntil(
     caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting())
   );
 });
 
-// Activate: clean old caches
 self.addEventListener("activate", e => {
   e.waitUntil(
     caches.keys().then(keys =>
@@ -26,7 +21,6 @@ self.addEventListener("activate", e => {
   );
 });
 
-// Fetch: cache-first for assets, network-first for everything else
 self.addEventListener("fetch", e => {
   if (e.request.method !== "GET") return;
   e.respondWith(
@@ -38,7 +32,7 @@ self.addEventListener("fetch", e => {
           caches.open(CACHE).then(cache => cache.put(e.request, clone));
         }
         return response;
-      }).catch(() => caches.match("/index.html"));
+      }).catch(() => caches.match("/AppGym-/index.html"));
     })
   );
 });
