@@ -499,7 +499,7 @@ let addExType = "libre"; // "libre" or "maquina"
 
 // Load from localStorage
 try {
-  const saved = localStorage.getItem("ironlog_v1");
+  const saved = localStorage.getItem("ironlog_v5");
   if (saved) { const d = JSON.parse(saved); if(d.days) days=d.days; if(d.sessions) sessions=d.sessions; }
 } catch(e){}
 
