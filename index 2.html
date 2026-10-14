@@ -193,6 +193,14 @@ select option{background:var(--deep)}
 .edit-set-label{font-size:9px;font-family:'Space Mono',monospace;color:var(--lo);text-align:center}
 .edit-input{padding:7px 8px;font-size:12px;border-radius:6px;width:100%}
 
+
+/* Seat position selector */
+.seat-selector{display:flex;align-items:center;gap:6px;margin-top:6px;padding:6px 8px;background:var(--surface);border:1px solid var(--border);border-radius:7px}
+.seat-label{font-size:9px;color:var(--lo);letter-spacing:1px;font-family:'Space Mono',monospace;white-space:nowrap}
+.seat-btns{display:flex;gap:4px;flex-wrap:wrap}
+.seat-btn{width:28px;height:28px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);color:var(--mid);font-size:12px;font-family:'Space Mono',monospace;font-weight:700;cursor:pointer}
+.seat-btn.active{background:var(--accent);border-color:var(--accent);color:var(--accent-text)}
+
 /* scrollbar */
 ::-webkit-scrollbar{width:3px}
 ::-webkit-scrollbar-thumb{background:var(--border)}
@@ -215,6 +223,7 @@ select option{background:var(--deep)}
           <button class="tbtn" onclick="startTimer(60)">60s</button>
           <button class="tbtn" onclick="startTimer(90)">90s</button>
           <button class="tbtn" onclick="startTimer(120)">120s</button>
+          <button class="tbtn" onclick="startTimer(180)">3min</button>
           <button class="tbtn" id="timer-stop" onclick="stopTimer()" style="display:none;background:#2a1515;color:var(--danger);border-color:#d95c5c44">✕</button>
         </div>
       </div>
@@ -346,6 +355,13 @@ select option{background:var(--deep)}
       <div class="field-label">EJERCICIO</div>
       <select id="add-ex-select"></select>
     </div>
+    <div class="field-wrap" style="display:flex;align-items:center;gap:12px">
+      <div class="field-label" style="margin:0">TIPO DE EJERCICIO</div>
+      <div style="display:flex;gap:6px">
+        <button id="type-libre" onclick="setExType('libre')" style="padding:5px 12px;border-radius:7px;font-size:11px;font-family:'Oswald',sans-serif;background:var(--accent);color:var(--accent-text);border:1px solid var(--accent)">Libre</button>
+        <button id="type-maquina" onclick="setExType('maquina')" style="padding:5px 12px;border-radius:7px;font-size:11px;font-family:'Oswald',sans-serif;background:var(--surface2);color:var(--mid);border:1px solid var(--border)">Máquina</button>
+      </div>
+    </div>
     <div class="two-col">
       <div><div class="field-label">SERIES</div><input type="number" id="add-sets" value="3" min="1" max="10"/></div>
       <div><div class="field-label">REPS REF.</div><input type="text" id="add-reps" value="10" placeholder="8-12"/></div>
@@ -379,8 +395,64 @@ const EX_LIB = {
   glutes:["Hip thrust","Sentadilla búlgara","Abducción","Patada de glúteo"],
   calves:["Elevación de talones de pie","Elevación sentado","Press de pies en prensa"]
 };
-const KG_P = [0,2.5,5,7.5,10,12.5,15,17.5,20,22.5,25,30,35,40,45,50,60,70,80,90,100];
+const KG_P_UPPER = [0,2.5,5,7.5,10,12.5,15,17.5,20,22.5,25,30,35,40,45,50,55,60,65,70,80,90,100];
+const KG_P_LEGS  = [0,5,10,15,20,25,30,35,40,45,50,60,70,80,90,100,110,120,130,140,150,160,170,180,190,200,220,240,260];
+const LEG_MUSCLES = ["quads","hamstrings","glutes","calves"];
+function getKgPresets(muscleId) {
+  return LEG_MUSCLES.includes(muscleId) ? KG_P_LEGS : KG_P_UPPER;
+}
 const REP_P = [1,2,3,4,5,6,7,8,9,10,12,15,20,25,30,"max","fallo"];
+
+// Custom weights per exercise — persisted in localStorage
+let customWeights = {}; // { exName: Set of custom kg values }
+try {
+  const cw = localStorage.getItem("ironlog_custom_weights");
+  if (cw) {
+    const parsed = JSON.parse(cw);
+    Object.keys(parsed).forEach(k => customWeights[k] = new Set(parsed[k]));
+  }
+} catch(e){}
+
+// Last seat per exercise
+let lastSeat = {};
+try {
+  const ls = localStorage.getItem("ironlog_last_seat");
+  if (ls) lastSeat = JSON.parse(ls);
+} catch(e){}
+
+function saveLastSeat(exName, seat) {
+  lastSeat[exName] = seat;
+  try { localStorage.setItem("ironlog_last_seat", JSON.stringify(lastSeat)); } catch(e){}
+}
+
+function setSeat(exId, si, seat) {
+  const ex = days[activeDay].exercises.find(e=>e.id===exId);
+  if (!ex) return;
+  // Toggle: click same seat again to deselect
+  ex.weights[si].seat = ex.weights[si].seat === seat ? "" : seat;
+  if (ex.weights[si].seat) saveLastSeat(ex.name, ex.weights[si].seat);
+  expandedEx = exId;
+  persist(); renderExercises();
+}
+
+function saveCustomWeight(exName, kg) {
+  const val = parseFloat(kg);
+  if (!val || isNaN(val)) return;
+  if (!customWeights[exName]) customWeights[exName] = new Set();
+  customWeights[exName].add(val);
+  try {
+    const toSave = {};
+    Object.keys(customWeights).forEach(k => toSave[k] = [...customWeights[k]]);
+    localStorage.setItem("ironlog_custom_weights", JSON.stringify(toSave));
+  } catch(e){}
+}
+
+function getKgPresetsForEx(muscleId, exName) {
+  const base = getKgPresets(muscleId);
+  const custom = customWeights[exName] ? [...customWeights[exName]] : [];
+  const merged = [...new Set([...base, ...custom])].sort((a,b)=>a-b);
+  return merged;
+}
 const MUSCLE_MAP_ID = {
   "pecho":"chest","chest":"chest","espalda":"back","back":"back",
   "hombros":"shoulders","shoulders":"shoulders","biceps":"biceps","bíceps":"biceps",
@@ -391,7 +463,7 @@ const MUSCLE_MAP_ID = {
   "pantorrillas":"calves","calves":"calves"
 };
 
-const mkWeights = n => Array(n).fill(0).map(()=>({kg:"",reps:"",done:false}));
+const mkWeights = n => Array(n).fill(0).map(()=>({kg:"",reps:"",done:false,seat:""}));
 
 const DEFAULT_DAYS = [
   {id:1,label:"DÍA 1",focus:"Pecho + Tríceps",exercises:[
@@ -423,6 +495,7 @@ let expandedEx = null;
 // timer state now uses timerEnd timestamp
 let pickerState = null; // {exId, setIdx, type}
 let addMussel = "chest";
+let addExType = "libre"; // "libre" or "maquina"
 
 // Load from localStorage
 try {
@@ -488,15 +561,28 @@ function renderExercises() {
     let setsHtml = "";
     if (isExp) {
       const noteHtml = ex.notes ? `<div class="ex-note"><span>📝</span><span>${ex.notes}</span></div>` : "";
-      const rowsHtml = ex.weights.map((w,si)=>`
-        <div class="set-row">
+      const rowsHtml = ex.weights.map((w,si)=>{
+        const seatHtml = ex.isMachine ? `
+          <div class="seat-selector">
+            <span class="seat-label">🪑 ASIENTO</span>
+            <div class="seat-btns">
+              ${[1,2,3,4,5,6,7,8].map(n=>`
+                <button class="seat-btn ${w.seat===String(n)?"active":""}"
+                  onclick="setSeat(${ex.id},${si},'${n}')">${n}</button>`).join("")}
+            </div>
+          </div>` : "";
+        return `
+        <div class="set-row" style="grid-template-columns:22px 1fr 1fr 28px 22px">
           <div class="set-label ${w.done?"done":""}">S${si+1}</div>
           <button class="set-val-btn ${w.done?"done":w.kg?"has-val":""}"
             onclick="openPicker(${ex.id},${si},'kg')">${w.kg!==""?w.kg:"—"}</button>
           <button class="set-val-btn ${w.done?"done":w.reps?"has-val":""}"
             onclick="openPicker(${ex.id},${si},'reps')">${w.reps||"—"}</button>
           <button class="set-done-btn ${w.done?"done":""}" onclick="toggleSetDone(${ex.id},${si})"></button>
-        </div>`).join("");
+          <button onclick="deleteSerie(${ex.id},${si})" style="background:none;border:none;color:var(--lo);font-size:12px;cursor:pointer;padding:2px">✕</button>
+        </div>
+        ${seatHtml}`;
+      }).join("");
       setsHtml = `<div class="sets-panel">
         ${noteHtml}
         <div class="sets-header"><span></span><span>KG</span><span>REPS</span><span></span></div>
@@ -533,7 +619,28 @@ function toggleSetDone(exId, si) {
   ex.weights[si].done = !ex.weights[si].done;
   ex.done = ex.weights.every(w=>w.done);
   // Start session timer on first done set
-  if (ex.weights[si].done) startSessionTimer();
+  if (ex.weights[si].done) { startSessionTimer(); requestNotifPermission(); }
+  persist(); renderExercises();
+}
+
+function addSerie(exId) {
+  const ex = days[activeDay].exercises.find(e=>e.id===exId);
+  if (!ex) return;
+  ex.weights.push({kg:"", reps:"", done:false});
+  ex.sets = ex.weights.length;
+  persist(); renderExercises();
+  // Keep panel expanded
+  expandedEx = exId;
+  renderExercises();
+}
+
+function deleteSerie(exId, si) {
+  const ex = days[activeDay].exercises.find(e=>e.id===exId);
+  if (!ex || ex.weights.length <= 1) return;
+  ex.weights.splice(si, 1);
+  ex.sets = ex.weights.length;
+  ex.done = ex.weights.every(w=>w.done);
+  expandedEx = exId;
   persist(); renderExercises();
 }
 
@@ -576,7 +683,8 @@ function openPicker(exId, si, type) {
   pickerState = {exId, si, type};
   const ex = days[activeDay].exercises.find(e=>e.id===exId);
   const cur = type==="kg" ? ex.weights[si].kg : ex.weights[si].reps;
-  const presets = type==="kg" ? KG_P : REP_P;
+  const ex2 = days[activeDay].exercises.find(e=>e.id===exId);
+  const presets = type==="kg" ? getKgPresetsForEx(ex2?ex2.muscle:"chest", ex2?ex2.name:"") : REP_P;
 
   document.getElementById("picker-title-text").textContent = type==="kg" ? "⚖️ PESO (KG)" : "🔁 REPETICIONES";
   document.getElementById("picker-custom-input").value = "";
@@ -598,8 +706,12 @@ function closePicker() {
 function pickerSelect(val) {
   if (!pickerState) return;
   const ex = days[activeDay].exercises.find(e=>e.id===pickerState.exId);
-  if (pickerState.type==="kg") ex.weights[pickerState.si].kg = String(val);
-  else ex.weights[pickerState.si].reps = String(val);
+  if (pickerState.type==="kg") {
+    ex.weights[pickerState.si].kg = String(val);
+    saveCustomWeight(ex.name, val);
+  } else {
+    ex.weights[pickerState.si].reps = String(val);
+  }
   persist(); closePicker(); renderExercises();
 }
 
@@ -618,6 +730,8 @@ document.getElementById("picker-custom-input").addEventListener("keydown", funct
 // ── ADD EXERCISE ─────────────────────────────────────────────────
 function openAddModal() {
   addMussel = "chest";
+  addExType = "libre";
+  setExType("libre");
   renderMuscleChips();
   renderExSelect();
   document.getElementById("add-sets").value = 3;
@@ -627,6 +741,16 @@ function openAddModal() {
 function closeAddModal() {
   document.getElementById("add-overlay").classList.remove("open");
 }
+function setExType(type) {
+  addExType = type;
+  document.getElementById("type-libre").style.background = type==="libre" ? "var(--accent)" : "var(--surface2)";
+  document.getElementById("type-libre").style.color = type==="libre" ? "var(--accent-text)" : "var(--mid)";
+  document.getElementById("type-libre").style.borderColor = type==="libre" ? "var(--accent)" : "var(--border)";
+  document.getElementById("type-maquina").style.background = type==="maquina" ? "var(--accent)" : "var(--surface2)";
+  document.getElementById("type-maquina").style.color = type==="maquina" ? "var(--accent-text)" : "var(--mid)";
+  document.getElementById("type-maquina").style.borderColor = type==="maquina" ? "var(--accent)" : "var(--border)";
+}
+
 function renderMuscleChips() {
   document.getElementById("muscle-chips").innerHTML = MUSCLE_GROUPS.map(m=>`
     <button class="mchip ${m.id===addMussel?"active":""}" onclick="selectMuscle('${m.id}')">${m.label}</button>`).join("");
@@ -642,7 +766,7 @@ function submitAddExercise() {
   const name = document.getElementById("add-ex-select").value;
   const sets = parseInt(document.getElementById("add-sets").value)||3;
   const reps = document.getElementById("add-reps").value||"10";
-  days[activeDay].exercises.push({id:Date.now(),name,muscle:addMussel,sets,reps,notes:"",done:false,weights:mkWeights(sets)});
+  days[activeDay].exercises.push({id:Date.now(),name,muscle:addMussel,sets,reps,notes:"",isMachine:addExType==="maquina",done:false,weights:mkWeights(sets)});
   persist(); closeAddModal(); renderExercises();
 }
 
@@ -655,7 +779,7 @@ function renderHistory() {
     const exRows = s.exercises.map(e=>{
       const best = Math.max(...(e.weights||[]).map(w=>parseFloat(w.kg)||0),0);
       const chips = (e.weights||[]).filter(w=>w.kg||w.reps).map((w,i)=>`
-        <span class="set-chip">S${i+1}${w.kg?" "+w.kg+"kg":""}${w.kg&&w.reps?"×":""}${w.reps||""}</span>`).join("");
+        <span class="set-chip">S${i+1}${w.kg?" "+w.kg+"kg":""}${w.kg&&w.reps?"×":""}${w.reps||""}${w.seat?" 🪑"+w.seat:""}</span>`).join("");
       return `<div class="session-ex">
         <div class="session-ex-name">✓ ${e.name}${best>0?`<span class="max">max ${best}kg</span>`:""}</div>
         ${chips?`<div class="set-chips">${chips}</div>`:""}
@@ -666,7 +790,8 @@ function renderHistory() {
         <div><div class="session-date">${s.date.toUpperCase()}</div>
           <div class="session-day">${s.dayLabel} · ${s.dayFocus}${s.duration ? " · ⏱ " + formatElapsed(s.duration) : ""}</div></div>
         <div style="display:flex;align-items:center;gap:8px">
-          <button onclick="openEditSession(${s.id})" style="background:var(--surface2);border:1px solid var(--border);color:var(--mid);border-radius:6px;padding:3px 10px;font-size:11px">✏️ Editar</button>
+          <button onclick="openEditSession(${s.id})" style="background:var(--surface2);border:1px solid var(--border);color:var(--mid);border-radius:6px;padding:3px 10px;font-size:11px">✏️</button>
+          <button onclick="deleteSession(${s.id})" style="background:#2a1515;border:1px solid var(--danger)44;color:var(--danger);border-radius:6px;padding:3px 10px;font-size:11px">🗑️</button>
           <div class="session-count">${s.exercises.length} ej.</div>
         </div>
       </div>
@@ -814,6 +939,12 @@ function stopTimer() {
   document.getElementById("timer-stop").style.display = "none";
   renderTimerDisplay(90);
 }
+
+function requestNotifPermission() {
+  if ("Notification" in window && Notification.permission === "default") {
+    Notification.requestPermission();
+  }
+}
 function tickTimer() {
   if (!timerEnd) return;
   const remaining = Math.max(0, Math.round((timerEnd - Date.now()) / 1000));
@@ -822,6 +953,10 @@ function tickTimer() {
     stopTimer();
     // Vibrate if supported
     if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+    // Push notification
+    if ("Notification" in window && Notification.permission === "granted") {
+      new Notification("IronLog", { body: "¡Descanso terminado! A la siguiente serie 💪", icon: "/AppGym-/icons/icon-192.png" });
+    }
     return;
   }
   timerRAF = requestAnimationFrame(tickTimer);
@@ -842,6 +977,10 @@ document.addEventListener("visibilitychange", () => {
 });
 
 // ── LAST WEIGHTS: preload from history ────────────────────────────
+function getLastSeatForExercise(exName) {
+  return lastSeat[exName] || "";
+}
+
 function getLastWeightsForExercise(exName) {
   for (const s of sessions) {
     const ex = s.exercises.find(e => e.name === exName);
@@ -861,9 +1000,11 @@ function preloadLastWeights() {
     const last = getLastWeightsForExercise(ex.name);
     if (!last) return;
     // Copy weights, reset done state
+    const lastSeatVal = getLastSeatForExercise(ex.name);
     ex.weights = ex.weights.map((w, i) => ({
       kg: last[i] ? last[i].kg : "",
       reps: last[i] ? last[i].reps : "",
+      seat: last[i] ? (last[i].seat || lastSeatVal) : lastSeatVal,
       done: false
     }));
     changed = true;
@@ -873,6 +1014,14 @@ function preloadLastWeights() {
 
 // ── EDIT SESSION ──────────────────────────────────────────────────
 let editingSessionId = null;
+
+function deleteSession(sessionId) {
+  showConfirm("¿Borrar sesión?", "Esta sesión se eliminará del historial permanentemente.", "Borrar", () => {
+    sessions = sessions.filter(s => s.id !== sessionId);
+    persist();
+    renderHistory();
+  });
+}
 
 function openEditSession(sessionId) {
   editingSessionId = sessionId;
@@ -1088,7 +1237,7 @@ async function exportSessions() {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryRows), "RESUMEN");
 
     // Sheet 2: Detail
-    const detailRows = [["FECHA", "DÍA", "EJERCICIO", "MÚSCULO", "SERIE", "KG", "REPS"]];
+    const detailRows = [["FECHA", "DÍA", "EJERCICIO", "MÚSCULO", "SERIE", "KG", "REPS", "ASIENTO"]];
     sessions.forEach(s => {
       s.exercises.forEach(ex => {
         (ex.weights || []).forEach((w, i) => {
