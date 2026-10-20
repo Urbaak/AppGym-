@@ -353,15 +353,11 @@ select option{background:var(--deep)}
     </div>
     <div class="field-wrap">
       <div class="field-label">EJERCICIO</div>
-      <select id="add-ex-select"></select>
+      <input type="text" id="add-ex-input" placeholder="Nombre del ejercicio" list="ex-suggestions"
+        style="width:100%;padding:9px 11px;background:var(--deep);border:1px solid var(--border);border-radius:8px;color:var(--hi);font-size:13px;font-family:'Oswald',sans-serif"/>
+      <datalist id="ex-suggestions"></datalist>
     </div>
-    <div class="field-wrap" style="display:flex;align-items:center;gap:12px">
-      <div class="field-label" style="margin:0">TIPO DE EJERCICIO</div>
-      <div style="display:flex;gap:6px">
-        <button id="type-libre" onclick="setExType('libre')" style="padding:5px 12px;border-radius:7px;font-size:11px;font-family:'Oswald',sans-serif;background:var(--accent);color:var(--accent-text);border:1px solid var(--accent)">Libre</button>
-        <button id="type-maquina" onclick="setExType('maquina')" style="padding:5px 12px;border-radius:7px;font-size:11px;font-family:'Oswald',sans-serif;background:var(--surface2);color:var(--mid);border:1px solid var(--border)">Máquina</button>
-      </div>
-    </div>
+
     <div class="two-col">
       <div><div class="field-label">SERIES</div><input type="number" id="add-sets" value="3" min="1" max="10"/></div>
       <div><div class="field-label">REPS REF.</div><input type="text" id="add-reps" value="10" placeholder="8-12"/></div>
@@ -425,8 +421,36 @@ function saveLastSeat(exName, seat) {
   try { localStorage.setItem("ironlog_last_seat", JSON.stringify(lastSeat)); } catch(e){}
 }
 
+function toggleSerieNote(exId, si) {
+  const ex = days[activeDay].exercises.find(e=>e.id==exId);
+  if (!ex) return;
+  ex.weights[si].showNote = !ex.weights[si].showNote;
+  expandedEx = exId;
+  persist(); renderExercises();
+}
+
+function setSerieNote(exId, si, val) {
+  const ex = days[activeDay].exercises.find(e=>e.id==exId);
+  if (!ex) return;
+  ex.weights[si].note = val;
+  persist();
+}
+
+function toggleShowSeat(exId) {
+  const ex = days[activeDay].exercises.find(e=>e.id==exId);
+  if (!ex) return;
+  ex.showSeat = !ex.showSeat;
+  // Preload last seat if activating
+  if (ex.showSeat) {
+    const last = getLastSeatForExercise(ex.name);
+    if (last) ex.weights.forEach(w => { if (!w.seat) w.seat = last; });
+  }
+  expandedEx = exId;
+  persist(); renderExercises();
+}
+
 function setSeat(exId, si, seat) {
-  const ex = days[activeDay].exercises.find(e=>e.id===exId);
+  const ex = days[activeDay].exercises.find(e=>e.id==exId);
   if (!ex) return;
   // Toggle: click same seat again to deselect
   ex.weights[si].seat = ex.weights[si].seat === seat ? "" : seat;
@@ -463,7 +487,7 @@ const MUSCLE_MAP_ID = {
   "pantorrillas":"calves","calves":"calves"
 };
 
-const mkWeights = n => Array(n).fill(0).map(()=>({kg:"",reps:"",done:false,seat:""}));
+const mkWeights = n => Array(n).fill(0).map(()=>({kg:"",reps:"",done:false,seat:"",note:"",showNote:false}));
 
 const DEFAULT_DAYS = [
   {id:1,label:"DÍA 1",focus:"Pecho + Tríceps",exercises:[
@@ -487,6 +511,22 @@ const DEFAULT_DAYS = [
   ]}
 ];
 
+// ── RÉCORD PERSONAL ───────────────────────────────────────────────
+function getPersonalRecord(exName) {
+  let max = 0;
+  sessions.forEach(s => {
+    (s.exercises||[]).forEach(e => {
+      if (e.name === exName) {
+        (e.weights||[]).forEach(w => {
+          const kg = parseFloat(w.kg)||0;
+          if (kg > max) max = kg;
+        });
+      }
+    });
+  });
+  return max;
+}
+
 // ── STATE ────────────────────────────────────────────────────────
 let days = JSON.parse(JSON.stringify(DEFAULT_DAYS));
 let sessions = [];
@@ -495,7 +535,6 @@ let expandedEx = null;
 // timer state now uses timerEnd timestamp
 let pickerState = null; // {exId, setIdx, type}
 let addMussel = "chest";
-let addExType = "libre"; // "libre" or "maquina"
 
 // Load from localStorage
 try {
@@ -562,7 +601,7 @@ function renderExercises() {
     if (isExp) {
       const noteHtml = ex.notes ? `<div class="ex-note"><span>📝</span><span>${ex.notes}</span></div>` : "";
       const rowsHtml = ex.weights.map((w,si)=>{
-        const seatHtml = ex.isMachine ? `
+        const seatHtml = ex.showSeat ? `
           <div class="seat-selector">
             <span class="seat-label">🪑 ASIENTO</span>
             <div class="seat-btns">
@@ -571,20 +610,40 @@ function renderExercises() {
                   onclick="setSeat(${ex.id},${si},'${n}')">${n}</button>`).join("")}
             </div>
           </div>` : "";
+        const noteInput = w.showNote ? `
+          <div style="margin-top:5px;margin-left:28px">
+            <input type="text" placeholder="Nota (máquina, estado, etc.)" value="${w.note||""}"
+              onblur="setSerieNote(${ex.id},${si},this.value)"
+              style="width:100%;padding:7px 10px;font-size:11px;border-radius:6px;
+                background:var(--surface);border:1px solid var(--border);color:var(--hi)"/>
+          </div>` : "";
         return `
-        <div class="set-row" style="grid-template-columns:22px 1fr 1fr 28px 22px">
+        <div class="set-row" style="grid-template-columns:22px 1fr 1fr 28px 22px 22px">
           <div class="set-label ${w.done?"done":""}">S${si+1}</div>
           <button class="set-val-btn ${w.done?"done":w.kg?"has-val":""}"
             onclick="openPicker(${ex.id},${si},'kg')">${w.kg!==""?w.kg:"—"}</button>
           <button class="set-val-btn ${w.done?"done":w.reps?"has-val":""}"
             onclick="openPicker(${ex.id},${si},'reps')">${w.reps||"—"}</button>
           <button class="set-done-btn ${w.done?"done":""}" onclick="toggleSetDone(${ex.id},${si})"></button>
+          <button onclick="toggleSerieNote(${ex.id},${si})" title="Agregar nota"
+            style="background:${w.note?"var(--accent-dark)":"none"};border:none;
+              color:${w.note?"var(--accent)":"var(--lo)"};font-size:13px;cursor:pointer;padding:2px">💬</button>
           <button onclick="deleteSerie(${ex.id},${si})" style="background:none;border:none;color:var(--lo);font-size:12px;cursor:pointer;padding:2px">✕</button>
         </div>
-        ${seatHtml}`;
+        ${seatHtml}
+        ${noteInput}`;
       }).join("");
+      const seatToggleBtn = `<button onclick="toggleShowSeat(${ex.id})" style="background:${ex.showSeat?"var(--accent)":"var(--surface2)"};border:1px solid ${ex.showSeat?"var(--accent)":"var(--border)"};color:${ex.showSeat?"var(--accent-text)":"var(--mid)"};border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;margin-bottom:8px">🪑 ${ex.showSeat?"Ocultar asiento":"Registrar asiento"}</button>`;
+      const pr = getPersonalRecord(ex.name);
+      const currentMax = Math.max(...ex.weights.map(w=>parseFloat(w.kg)||0), 0);
+      const isNewRecord = currentMax > 0 && pr > 0 && currentMax > pr;
+      const prBanner = isNewRecord
+        ? `<div style="background:#2a1d00;border:1px solid #e07a3a;border-radius:7px;padding:7px 10px;margin-bottom:8px;text-align:center;font-size:12px;color:#e07a3a;letter-spacing:1px">🏆 ¡NUEVO RÉCORD! ${currentMax}kg</div>`
+        : pr > 0 ? `<div style="font-size:10px;color:var(--lo);font-family:'Space Mono',monospace;margin-bottom:8px">🏆 RP: ${pr}kg</div>` : "";
       setsHtml = `<div class="sets-panel">
         ${noteHtml}
+        ${prBanner}
+        ${seatToggleBtn}
         <div class="sets-header"><span></span><span>KG</span><span>REPS</span><span></span></div>
         ${rowsHtml}
         <button onclick="addSerie(${ex.id})" style="width:100%;margin-top:6px;padding:8px;background:none;border:2px dashed var(--border);border-radius:8px;color:var(--mid);font-size:11px;letter-spacing:1px;cursor:pointer;font-family:'Oswald',sans-serif">+ AGREGAR SERIE</button>
@@ -596,10 +655,19 @@ function renderExercises() {
         <div class="ex-check ${ex.done?"done":""}"></div>
         <div class="ex-info">
           <div class="ex-name">${ex.name}</div>
-          <div class="ex-meta">
-            ${doneSets}/${ex.sets} series
+          <div class="ex-meta" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span>${doneSets}/${ex.sets} series</span>
             ${bestKg>0?`<span class="accent">· max ${bestKg}kg</span>`:""}
+            ${(function(){const p=getPersonalRecord(ex.name);return p>0?`<span style="color:#e07a3a">· 🏆${p}kg</span>`:""})()}
             <span class="muted">· ${musLabel}</span>
+            ${isExp ? `
+              <span style="display:flex;align-items:center;gap:4px;margin-left:4px">
+                <button onclick="event.stopPropagation();changeExSets(${ex.id},-1)"
+                  style="background:var(--surface2);border:1px solid var(--border);color:var(--mid);border-radius:4px;width:20px;height:20px;font-size:12px;cursor:pointer;line-height:1">−</button>
+                <span style="font-size:10px;color:var(--mid)">${ex.sets} ser</span>
+                <button onclick="event.stopPropagation();changeExSets(${ex.id},1)"
+                  style="background:var(--surface2);border:1px solid var(--border);color:var(--mid);border-radius:4px;width:20px;height:20px;font-size:12px;cursor:pointer;line-height:1">+</button>
+              </span>` : ""}
           </div>
         </div>
         <button class="ex-timer-btn" onclick="event.stopPropagation();startTimer(90)">⏱</button>
@@ -611,12 +679,12 @@ function renderExercises() {
 }
 
 function toggleExpand(id) {
-  expandedEx = (expandedEx===id) ? null : id;
+  expandedEx = (expandedEx==id) ? null : id;
   renderExercises();
 }
 
 function toggleSetDone(exId, si) {
-  const ex = days[activeDay].exercises.find(e=>e.id===exId);
+  const ex = days[activeDay].exercises.find(e=>e.id==exId);
   ex.weights[si].done = !ex.weights[si].done;
   ex.done = ex.weights.every(w=>w.done);
   // Start session timer on first done set
@@ -624,19 +692,31 @@ function toggleSetDone(exId, si) {
   persist(); renderExercises();
 }
 
-function addSerie(exId) {
-  const ex = days[activeDay].exercises.find(e=>e.id===exId);
+function changeExSets(exId, delta) {
+  const ex = days[activeDay].exercises.find(e=>e.id==exId);
   if (!ex) return;
-  ex.weights.push({kg:"", reps:"", done:false});
+  const newSets = Math.max(1, ex.weights.length + delta);
+  if (delta > 0) {
+    ex.weights.push({kg:"", reps:"", done:false, seat:"", note:"", showNote:false});
+  } else if (delta < 0 && ex.weights.length > 1) {
+    ex.weights.pop();
+  }
   ex.sets = ex.weights.length;
-  persist(); renderExercises();
-  // Keep panel expanded
   expandedEx = exId;
-  renderExercises();
+  persist(); renderExercises();
+}
+
+function addSerie(exId) {
+  const ex = days[activeDay].exercises.find(e=>e.id==exId);
+  if (!ex) return;
+  ex.weights.push({kg:"", reps:"", done:false, seat:"", note:"", showNote:false});
+  ex.sets = ex.weights.length;
+  expandedEx = exId;
+  persist(); renderExercises();
 }
 
 function deleteSerie(exId, si) {
-  const ex = days[activeDay].exercises.find(e=>e.id===exId);
+  const ex = days[activeDay].exercises.find(e=>e.id==exId);
   if (!ex || ex.weights.length <= 1) return;
   ex.weights.splice(si, 1);
   ex.sets = ex.weights.length;
@@ -646,12 +726,13 @@ function deleteSerie(exId, si) {
 }
 
 function deleteExercise(id) {
-  const ex = days[activeDay].exercises.find(e=>e.id===id);
+  const numId = Number(id);
+  const ex = days[activeDay].exercises.find(e=>Number(e.id)===numId);
   const name = ex ? ex.name : "este ejercicio";
-  showConfirm("¿Borrar ejercicio?", `¿Querés eliminar "${name}" de la rutina?`, "Borrar", () => {
-    days[activeDay].exercises = days[activeDay].exercises.filter(e=>e.id!==id);
-    persist(); renderExercises();
-  });
+  if (!confirm(`¿Borrar "${name}" de la rutina?`)) return;
+  days[activeDay].exercises = days[activeDay].exercises.filter(e=>Number(e.id)!==numId);
+  expandedEx = null;
+  persist(); renderExercises();
 }
 
 function saveSession() {
@@ -682,9 +763,9 @@ function saveSession() {
 function openPicker(exId, si, type) {
   event.stopPropagation();
   pickerState = {exId, si, type};
-  const ex = days[activeDay].exercises.find(e=>e.id===exId);
+  const ex = days[activeDay].exercises.find(e=>e.id==exId);
   const cur = type==="kg" ? ex.weights[si].kg : ex.weights[si].reps;
-  const ex2 = days[activeDay].exercises.find(e=>e.id===exId);
+  const ex2 = days[activeDay].exercises.find(e=>e.id==exId);
   const presets = type==="kg" ? getKgPresetsForEx(ex2?ex2.muscle:"chest", ex2?ex2.name:"") : REP_P;
 
   document.getElementById("picker-title-text").textContent = type==="kg" ? "⚖️ PESO (KG)" : "🔁 REPETICIONES";
@@ -706,7 +787,7 @@ function closePicker() {
 
 function pickerSelect(val) {
   if (!pickerState) return;
-  const ex = days[activeDay].exercises.find(e=>e.id===pickerState.exId);
+  const ex = days[activeDay].exercises.find(e=>e.id==pickerState.exId);
   if (pickerState.type==="kg") {
     ex.weights[pickerState.si].kg = String(val);
     saveCustomWeight(ex.name, val);
@@ -731,8 +812,8 @@ document.getElementById("picker-custom-input").addEventListener("keydown", funct
 // ── ADD EXERCISE ─────────────────────────────────────────────────
 function openAddModal() {
   addMussel = "chest";
-  addExType = "libre";
-  setExType("libre");
+  const inp = document.getElementById("add-ex-input");
+  if (inp) inp.value = "";
   renderMuscleChips();
   renderExSelect();
   document.getElementById("add-sets").value = 3;
@@ -742,32 +823,28 @@ function openAddModal() {
 function closeAddModal() {
   document.getElementById("add-overlay").classList.remove("open");
 }
-function setExType(type) {
-  addExType = type;
-  document.getElementById("type-libre").style.background = type==="libre" ? "var(--accent)" : "var(--surface2)";
-  document.getElementById("type-libre").style.color = type==="libre" ? "var(--accent-text)" : "var(--mid)";
-  document.getElementById("type-libre").style.borderColor = type==="libre" ? "var(--accent)" : "var(--border)";
-  document.getElementById("type-maquina").style.background = type==="maquina" ? "var(--accent)" : "var(--surface2)";
-  document.getElementById("type-maquina").style.color = type==="maquina" ? "var(--accent-text)" : "var(--mid)";
-  document.getElementById("type-maquina").style.borderColor = type==="maquina" ? "var(--accent)" : "var(--border)";
-}
-
 function renderMuscleChips() {
   document.getElementById("muscle-chips").innerHTML = MUSCLE_GROUPS.map(m=>`
     <button class="mchip ${m.id===addMussel?"active":""}" onclick="selectMuscle('${m.id}')">${m.label}</button>`).join("");
 }
 function selectMuscle(id) {
-  addMussel = id; renderMuscleChips(); renderExSelect();
+  addMussel = id; renderMuscleChips();
+  const inp = document.getElementById("add-ex-input");
+  if (inp) inp.value = "";
+  renderExSelect();
 }
 function renderExSelect() {
-  const sel = document.getElementById("add-ex-select");
-  sel.innerHTML = (EX_LIB[addMussel]||[]).map(e=>`<option value="${e}">${e}</option>`).join("");
+  const dl = document.getElementById("ex-suggestions");
+  if (dl) dl.innerHTML = (EX_LIB[addMussel]||[]).map(e=>`<option value="${e}">`).join("");
+  // Set first suggestion as placeholder if input is empty
+  const inp = document.getElementById("add-ex-input");
+  if (inp && !inp.value) inp.value = (EX_LIB[addMussel]||[])[0] || "";
 }
 function submitAddExercise() {
-  const name = document.getElementById("add-ex-select").value;
+  const name = document.getElementById("add-ex-input").value.trim();
   const sets = parseInt(document.getElementById("add-sets").value)||3;
   const reps = document.getElementById("add-reps").value||"10";
-  days[activeDay].exercises.push({id:Date.now(),name,muscle:addMussel,sets,reps,notes:"",isMachine:addExType==="maquina",done:false,weights:mkWeights(sets)});
+  days[activeDay].exercises.push({id:Date.now(),name,muscle:addMussel,sets,reps,notes:"",showSeat:false,done:false,weights:mkWeights(sets)});
   persist(); closeAddModal(); renderExercises();
 }
 
@@ -780,7 +857,7 @@ function renderHistory() {
     const exRows = s.exercises.map(e=>{
       const best = Math.max(...(e.weights||[]).map(w=>parseFloat(w.kg)||0),0);
       const chips = (e.weights||[]).filter(w=>w.kg||w.reps).map((w,i)=>`
-        <span class="set-chip">S${i+1}${w.kg?" "+w.kg+"kg":""}${w.kg&&w.reps?"×":""}${w.reps||""}${w.seat?" 🪑"+w.seat:""}</span>`).join("");
+        <span class="set-chip">S${i+1}${w.kg?" "+w.kg+"kg":""}${w.kg&&w.reps?"×":""}${w.reps||""}${w.seat?" 🪑"+w.seat:""}${w.note?" 💬":""}</span>`).join("");
       return `<div class="session-ex">
         <div class="session-ex-name">✓ ${e.name}${best>0?`<span class="max">max ${best}kg</span>`:""}</div>
         ${chips?`<div class="set-chips">${chips}</div>`:""}
@@ -1167,7 +1244,7 @@ async function importSessions(event) {
       const key = date + "|" + dayLabel;
       if (!sessionMap[key]) {
         sessionMap[key] = {
-          id: Date.now() + Math.random(),
+          id: Date.now() + Math.floor(Math.random()*1000),
           date, dayLabel,
           dayFocus: "",
           exercises: [],
